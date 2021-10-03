@@ -338,36 +338,27 @@ print ("%s: %.2f%%" % (loaded_model.metrics_names[1], score[1]*100))
 
 """# Part 7- Deploying the model to Predict a single sample."""
 
-# from keras.preprocessing import image
-# img = image.load_img("......",target_size=(224,224))
-# img = np.asarray(img)
+from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
+from tensorflow.keras.preprocessing import image
 
-# img = np.expand_dims(img, axis=0)
-# loaded_model.predict(img)
+def classify(img_path):
+    img = image.load_img(img_path, target_size=(224, 224))
+    img_array = image.img_to_array(img)
 
-import numpy as np
-from keras.preprocessing import image
-test_image = image.load_img('......', target_size = (224, 224))
-test_image = image.img_to_array(test_image)
-test_image = np.expand_dims(test_image, axis = 1)
-predicted_classes= np.argmax(loaded_model.predict(test_image), axis=1)
+    img_batch = np.expand_dims(img_array, axis=0)
 
-result = loaded_model.predict(test_image)
-test_set.class_indices
-if result[0][0][0] == 1:
-  prediction = 'Normal'
-elif result[0][1][0] ==1:
-  prediction = 'COVID'
-else:
-  prediction = 'PNEUMONIA'
+    img_preprocessed = preprocess_input(img_batch)
 
-print(prediction)
-print(result)
+    prediction = model.predict(img_preprocessed)
+
+    print(decode_predictions(prediction, top=3)[0])
+
+classify("./samples/112_malaria.jpg")
 
 
 
 
-"""#Section 2 - Using a pre-trained model to train and evaluate the dataset."""
+"""#Section 2.1 - Using pre-trained modelS to train and evaluate the dataset."""
 
 # from tensorflow.keras.models import Sequential
 # from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten, Conv2D, MaxPooling2D
@@ -376,13 +367,18 @@ from tensorflow.keras import applications
 # from keras.models import model_from_json
 
 pre_trained_model = tf.keras.models.Sequential([
+    
   tf.keras.layers.InputLayer((224,224,3)),
+    
   tf.keras.applications.VGG16(include_top=False,weights= 'imagenet', input_shape=(224,224,3)),
   tf.keras.layers.GlobalAveragePooling2D(),
+    
   tf.keras.layers.Dense(512,activation='relu'),
   #tf.keras.layers.Dropout(0.2),
+    
   tf.keras.layers.Dense(1024,activation='relu'),
   # tf.keras.layers.Dropout(0.2),
+    
   tf.keras.layers.Dense(1, activation='sigmoid'),
 ])
 
@@ -430,3 +426,188 @@ print(np.trace(confusion_matrix(test_set.classes, y_pred_pre)))
 
 from sklearn.metrics import accuracy_score
 accuracy_score(test_set.classes, y_pred_pre)
+
+
+# Part 5-Model accuracy and loss graphs
+
+import matplotlib.pyplot as plt
+#Graphing our training and validation
+
+
+acc = results_pre.history['accuracy']
+val_acc = results_pre.history['val_accuracy']
+loss = results_pre.history['loss']
+val_loss = results_pre.history['val_loss']
+epochs = range(len(acc))
+
+
+plt.plot(epochs, acc, 'r', label= 'Training acc')
+plt.plot(epochs, val_acc, 'b', label= 'Validation acc')
+plt.title('Training and validation accuracy')
+plt.ylabel('accuracy') 
+plt.xlabel('epoch')
+plt.legend()
+plt.figure()
+
+
+plt.plot(epochs, loss, 'r', label='Training loss')
+plt.plot(epochs, val_loss, 'b', label='Validation loss')
+plt.title('Training and validation loss')
+plt.ylabel('loss') 
+plt.xlabel('epoch')
+plt.legend()
+plt.show()
+
+# Part 6 - Saving and Loading the model for prediction
+
+# serialize model to JSON
+model_json = pre_trained_model.to_json()
+with open("/content/best_Model_weights.json", "w") as json_file:
+    json_file.write(model_json)
+    
+# load json and create model
+json_file = open('/content/best_Model_weights.json', 'r')
+loaded_model_json = json_file.read()
+json_file.close()
+loaded_model = model_from_json(loaded_model_json)
+
+# load weights into new model
+loaded_model.load_weights('best_Model_weights.h5')
+
+
+# Section 2.2   VGG16
+## Part 1- VGG16: Initialising the model
+
+pre_trained_model_Vgg =tf.keras.models.Sequential([
+  tf.keras.layers.InputLayer((224,224,3)),
+  tf.keras.applications.VGG16(include_top=False,weights= 'imagenet', input_shape=(224,224,3)),
+    
+  tf.keras.layers.GlobalAveragePooling2D(),
+    
+  tf.keras.layers.Dense(512,activation='relu'),
+  #tf.keras.layers.Dropout(0.2),
+    
+  tf.keras.layers.Dense(1024,activation='relu'),
+  # tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(1, activation='sigmoid'),
+])
+
+
+pre_trained_model_Vgg.summary()
+
+# Part 2- Compiling and trainig the model
+
+pre_trained_model_Vgg.compile(optimizer =tf.keras.optimizers.Adam(0.0001), loss = 'binary_crossentropy', metrics = ['accuracy'])
+
+from keras.callbacks import ModelCheckpoint, EarlyStopping
+
+filepath = '/content/best_Model_weights.h5'
+checkpoint_pre_vgg = ModelCheckpoint(filepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max')
+
+results_pre_vgg = pre_trained_model_Vgg.fit(x = training_set, validation_data = val_set, epochs = 15, callbacks=checkpoint_pre_vgg)
+
+
+## Part 3 - Plotting Graphical Confusion Matrix
+import numpy as np
+from sklearn.metrics import classification_report, confusion_matrix
+
+target_names_pre_vgg = []
+
+for key in training_set.class_indices:
+
+    target_names_pre_vgg.append(key)
+
+
+print(target_names_pre_vgg)
+
+
+Y_pred_pre_vgg = pre_trained_model_Vgg.predict_generator(test_set)
+
+y_pred_pre_vgg = np.where(Y_pred_pre_vgg>0.5, 1, 0)
+
+print('Confusion Matrix')
+
+cm_pre_vgg = confusion_matrix(test_set.classes, y_pred_pre_vgg)
+
+plot_confusion_matrix(cm_pre_vgg, target_names_pre_vgg, title='Confusion Matrix')
+
+
+# Part 4-Classification report
+report_vgg = classification_report(test_set.classes, y_pred_pre_vgg, target_names=target_names_pre_vgg)
+print(report_vgg)
+
+from sklearn.metrics import accuracy_score
+accuracy_score(test_set.classes, y_pred_pre)
+
+# Part 5-Model accuracy and loss graphs
+
+import matplotlib.pyplot as plt
+#Graphing our training and validation
+
+
+acc = results_pre_vgg.history['accuracy']
+val_acc = results_pre_vgg.history['val_accuracy']
+loss = results_pre_vgg.history['loss']
+val_loss = results_pre_vgg.history['val_loss']
+epochs = range(len(acc))
+
+
+plt.plot(epochs, acc, 'r', label= 'Training acc')
+plt.plot(epochs, val_acc, 'b', label= 'Validation acc')
+plt.title('Training and validation accuracy')
+plt.ylabel('accuracy') 
+plt.xlabel('epoch')
+plt.legend()
+plt.figure()
+
+
+plt.plot(epochs, loss, 'r', label='Training loss')
+plt.plot(epochs, val_loss, 'b', label='Validation loss')
+plt.title('Training and validation loss')
+plt.ylabel('loss') 
+plt.xlabel('epoch')
+plt.legend()
+plt.show()
+
+# Part 6 - Saving and Loading the model for prediction
+
+# serialize model to JSON
+model_json = pre_trained_model_Vgg.to_json()
+with open("/content/best_Model_weights.json", "w") as json_file:
+    json_file.write(model_json)
+    
+# load json and create model
+json_file = open('/content/best_Model_weights.json', 'r')
+loaded_model_json = json_file.read()
+json_file.close()
+loaded_model = model_from_json(loaded_model_json)
+
+# load weights into new model
+loaded_model.load_weights('best_Model_weights.h5')
+
+# evaluate loaded model on test data
+loaded_model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+score = loaded_model.evaluate(test_set, verbose=0)
+print ("%s: %.2f%%" % (loaded_model.metrics_names[1], score[1]*100))
+
+
+
+# Part 7 - Deploying the model to Predict a single sample.
+
+from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
+from tensorflow.keras.preprocessing import image
+
+def classify(img_path):
+    img = image.load_img(img_path, target_size=(224, 224))
+    img_array = image.img_to_array(img)
+
+    img_batch = np.expand_dims(img_array, axis=0)
+
+    img_preprocessed = preprocess_input(img_batch)
+
+    prediction = pre_trained_model_Vgg.predict(img_preprocessed)
+
+    print(decode_predictions(prediction, top=3)[0])
+
+classify("./samples/112_malaria.jpg")
+
